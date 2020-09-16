@@ -1,0 +1,12 @@
+#folder
+super_resolution/
+reference_paper/
+
+#file
+*.jpg
+*.pth
+*.xml
+*.pts
+*.pdf
+*.csv
+*.zip
