@@ -65,30 +65,30 @@ def main():
 
     land_predictor = dlib.shape_predictor('Z:/dlib/shape_68.dat')
 
-
     cv2.namedWindow('annotated')
     cv2.createTrackbar('threshold', 'annotated', 0, 255, nothing)
+    cv2.createTrackbar('land_height', 'annotated', 0, 20, nothing)
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
 
-    bbox_region = {'forehead': 0, 'chin': 0, 'add_face_width': 10}
-    filters = {'bbox': 10, 'landmark': 5}
+    face_size = 300
+    bbox_region = {'forehead': 35, 'chin': 0, 'add_face_width': 10}
+    filters = {'bbox': 15, 'landmark': 3}
 
     face_detect, land_detect = False, False
     prev_landmark = []
-    rel_landmark = []
     prev_x1, prev_x2, prev_y1, prev_y2 = 0, 0, 0, 0
-    blackboard = np.full((480, 300, 3), 0, dtype=np.uint8)
+    blackboard = np.full((480, face_size, 3), 0, dtype=np.uint8)
     n_point, i, j = 0, 0, 0
     while True:
         ret, frame = cap.read()
 
         if ret:
             boxes, labels, probs, sec1 = face_detection(frame, predictor)
-            draw_img = frame.copy()
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             sec2 = 0.0
 
+            '''Face & Landmark detection'''
             if boxes.size(0):
                 box = boxes[0, :]
                 label = f"Face: {probs[0]:.2f}"
@@ -121,38 +121,36 @@ def main():
                     prev_y2 = y2
 
                 face = frame[y1:y2, x1:x2].copy()
-                face2 = frame[y1:y2, x1:x2].copy()
 
-                rel_landmark, sec2 = landmark_detection(fl_detect_model, face, (224, 224, 1))
-
-                # face_box = dlib.rectangle(left=x1, top=y1, right=x2, bottom=y2)
-                # shape = land_predictor(gray, face_box)
-                # shape = shape_to_np(shape)
-                # for (x, y) in shape:
-                #     cv2.circle(draw_img, (x, y), 2, (0, 0, 255), -1)
-
-                draw_face_size = 300
-                face = cv2.resize(face, (draw_face_size, draw_face_size))
-                abs_landmark = rel_landmark.copy()
-                abs_landmark[0::2] = (abs_landmark[0::2] + 0.5) * draw_face_size
-                abs_landmark[1::2] = (abs_landmark[1::2] + 0.5) * draw_face_size
-
+                face_box = dlib.rectangle(left=x1, top=y1, right=x2, bottom=y2)
+                prev_time = time.time()
+                land_whole = land_predictor(gray, face_box)
+                sec2 = time.time() - prev_time
+                land_add = cv2.getTrackbarPos('land_height', 'annotated')
+                land_whole = shape_to_np(land_whole, land_add=land_add)
                 if land_detect:
                     idx = 0
-                    for land, prev_land in zip(abs_landmark, prev_landmark):
-                        if abs(land - prev_land) < filters['landmark']:
-                            abs_landmark[idx] = prev_landmark[idx]
+                    for land, prev_land in zip(land_whole, prev_landmark):
+                        if abs(land[0] - prev_land[0]) < filters['landmark']:
+                            land_whole[idx][0] = prev_land[0]
                         else:
-                            prev_landmark[idx] = abs_landmark[idx]
+                            prev_landmark[idx][0] = land[0]
+                        if abs(land[1] - prev_land[1]) < filters['landmark']:
+                            land_whole[idx][1] = prev_land[1]
+                        else:
+                            prev_landmark[idx][1] = land[1]
                         idx += 1
                 else:
                     land_detect = True
-                    prev_landmark = abs_landmark
+                    prev_landmark = land_whole
 
-                if face.shape[-1] != 3:
-                    face = cv2.cvtColor(face, cv2.COLOR_GRAY2BGR)
-                face = draw_landmark(face, abs_landmark)
-                blackboard[:300, :] = face
+                for (x, y) in land_whole:
+                    cv2.circle(frame, (x, y), 2, (0, 0, 255), -1)
+
+                land_face = land_whole.copy()
+                land_face[:, 0] = ((land_face[:, 0] - x1) / (x2 - x1)) * face_size
+                land_face[:, 1] = ((land_face[:, 1] - y1) / (y2 - y1)) * face_size
+                face = cv2.resize(face, (face_size, face_size))
 
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (128, 0, 255), 4)
                 cv2.putText(frame, label, (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
@@ -160,30 +158,15 @@ def main():
                 land_detect = False
                 face_detect = False
 
-            cv2.putText(frame, f'face detection : {sec1 * 100:.2}ms', (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        (0, 0, 255), 2)
-            cv2.putText(frame, f'landmark detection : {sec2 * 100:.2}ms', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                        (0, 0, 255), 2)
-            concat_img = cv2.hconcat([blackboard, frame])
-            cv2.imshow('annotated', concat_img)
-
-            # cv2.imshow('draw_img', draw_img)
-
             '''Detect eye center'''
-            # rel_landmark
+            # 동공 중심 검출 코드 손보기
             if boxes.size(0):
-                size = 300
-                face2 = cv2.resize(face2, (size, size))
-                land_croped_face = []
-                for r_land in range(0, len(rel_landmark), 2):
-                    land_croped_face.append([int((rel_landmark[r_land] + 0.5) * size),
-                                             int((rel_landmark[r_land+1] + 0.5) * size)])
-                mask = np.zeros(face2.shape[:2], dtype=np.uint8)
-                mask = eye_on_mask(land_croped_face, mask, left_eye)
-                mask = eye_on_mask(land_croped_face, mask, right_eye)
+                mask = np.zeros(face.shape[:2], dtype=np.uint8)
+                mask = eye_on_mask(land_face, mask, left_eye)
+                mask = eye_on_mask(land_face, mask, right_eye)
                 kernel = np.ones((9, 9), np.uint8)
                 mask = cv2.dilate(mask, kernel, 5)
-                eyes = cv2.bitwise_and(face2, face2, mask=mask)
+                eyes = cv2.bitwise_and(face, face, mask=mask)
                 mask = (eyes == [0, 0, 0]).all(axis=2)
                 eyes[mask] = [255, 255, 255]
                 eyes_gray = cv2.cvtColor(eyes, cv2.COLOR_BGR2GRAY)
@@ -195,13 +178,12 @@ def main():
                 thresh = cv2.medianBlur(thresh, 3)
                 thresh = cv2.bitwise_not(thresh)
 
-                mid = (land_croped_face[42][0] + land_croped_face[39][0]) // 2
-                center_img = face2.copy()
-                contouring(thresh[:, 0:mid], mid, center_img)
-                contouring(thresh[:, mid:], mid, center_img, True)
+                mid = (land_face[42][0] + land_face[39][0]) // 2
+                l_center = contouring(thresh[:, 0:mid], mid, face)
+                r_center = contouring(thresh[:, mid:], mid, face, True)
 
                 cv2.imshow('image', thresh)
-                cv2.imshow('eyes', center_img)
+                blackboard[:300, :] = face
             ''''''
 
             '''whiteboard'''
@@ -221,7 +203,9 @@ def main():
                     '''face landmark vector 저장'''
                     # landmark 제대로 검출됐는지도 추가
                     if boxes.size(0):
-                        print(rel_landmark)
+                        print(land_face)
+                        print(f'l_center : {l_center}')
+                        print(f'r_center : {r_center}')
                         print(f'x : {click_pt[0]}, y : {click_pt[1]}')
                         i += 1
                         click_pt.clear()
@@ -231,6 +215,13 @@ def main():
                 else:
                     click_pt.clear()
             ''''''
+
+            cv2.putText(frame, f'face detection : {sec1 * 100:.2}ms', (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                        (0, 0, 255), 2)
+            cv2.putText(frame, f'landmark detection : {sec2 * 100:.2}ms', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                        (0, 0, 255), 2)
+            concat_img = cv2.hconcat([blackboard, frame])
+            cv2.imshow('annotated', concat_img)
 
             if cv2.waitKey(1) == 27:
                 break

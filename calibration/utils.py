@@ -16,6 +16,8 @@ import torchvision.transforms.functional as TF
 
 left_eye = [36, 37, 38, 39, 40, 41]
 right_eye = [42, 43, 44, 45, 46, 47]
+eye_top = [37, 38,  43, 44]
+eye_bottom = [40, 41, 46, 47]
 
 
 points = [9, 16, 25]
@@ -92,16 +94,23 @@ def contouring(thresh, mid, img, right=False):
         if right:
             cx += mid  # Adding value of mid to x coordinate of centre of #right eye to adjust for dividing into two parts
         cv2.circle(img, (cx, cy), 2, (0, 0, 255), -1)  # drawing over #eyeball with red
+
+        return cx, cy
     except:
         pass
 
 
-def shape_to_np(shape, dtype="int"):
+def shape_to_np(shape, land_add=0, dtype="int"):
     # initialize the list of (x, y)-coordinates
     coords = np.zeros((68, 2), dtype=dtype)
     # loop over the 68 facial landmarks and convert them
     # to a 2-tuple of (x, y)-coordinates
     for i in range(0, 68):
-        coords[i] = (shape.part(i).x, shape.part(i).y)
+        if i in eye_top:
+            coords[i] = (shape.part(i).x, shape.part(i).y - land_add)
+        elif i in eye_bottom:
+            coords[i] = (shape.part(i).x, shape.part(i).y + land_add)
+        else:
+            coords[i] = (shape.part(i).x, shape.part(i).y)
     # return the list of (x, y)-coordinates
     return coords
