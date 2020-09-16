@@ -1,19 +1,12 @@
 import cv2
 import dlib
-import time
-import numpy as np
-from PIL import Image
 
 import sys
 sys.path.append('C:/Users/th_k9/Desktop/Eyetracking/pytorch_facelandmark_detection')
 from face_detection_model.mobilenetv1 import MobileNetV1
 from face_detection_model.ssd import SSD, Predictor
-from mobilenetv1_face_landmark import MobileNetV1 as mb
 
 import torch
-import torch.nn as nn
-from torchvision import models
-import torchvision.transforms.functional as TF
 
 from utils import *
 
@@ -51,18 +44,16 @@ def calib_board(n_point, i, j):
 def main():
     global click_pt
 
+    face_size = 300
+    bbox_region = {'forehead': 35, 'chin': 0, 'add_face_width': 10}
+    filters = {'bbox': 15, 'landmark': 3}
+
+    # face detector
     f_detection_model = SSD(2, MobileNetV1(2), is_training=False)
     state = torch.load('Z:/pths/face_detection/ssd_mobilenetv1/ssd-mobilev1-face-2134_0.0192.pth')
     f_detection_model.load_state_dict(state['model_state_dict'])
     predictor = Predictor(f_detection_model, 300)
-
-    fl_detect_model = Network()
-    fl_detect_model = mb(in_size=224, in_ch=1, num_landmarks=136)
-    fl_detect_model.load_state_dict(
-        torch.load('Z:/pths/cropped_face_landmark_detection/IBUG_300W_large_face/test1/mobile1_(224, 1).pth',
-                   map_location='cuda:0'))
-    fl_detect_model.cuda().eval()
-
+    # landmark detector
     land_predictor = dlib.shape_predictor('Z:/dlib/shape_68.dat')
 
     cv2.namedWindow('annotated')
@@ -70,15 +61,17 @@ def main():
     cv2.createTrackbar('land_height', 'annotated', 0, 20, nothing)
 
     cap = cv2.VideoCapture(1)
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    face_size = 300
-    bbox_region = {'forehead': 35, 'chin': 0, 'add_face_width': 10}
-    filters = {'bbox': 15, 'landmark': 3}
+    fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+    out = cv2.VideoWriter('C:/Users/th_k9/Desktop/t.avi', fourcc, 30.0, ((face_size + frame_width), 600))
+    save = False
 
     face_detect, land_detect = False, False
     prev_landmark = []
     prev_x1, prev_x2, prev_y1, prev_y2 = 0, 0, 0, 0
-    blackboard = np.full((480, face_size, 3), 0, dtype=np.uint8)
+    blackboard = np.full((600, (face_size + frame_width), 3), 0, dtype=np.uint8)
     n_point, i, j = 0, 0, 0
     while True:
         ret, frame = cap.read()
@@ -161,16 +154,33 @@ def main():
             '''Detect eye center'''
             # 동공 중심 검출 코드 손보기
             if boxes.size(0):
+                r_min_x, r_min_y, r_max_x, r_max_y = 640, 480, 0, 0
+                for coordis in right_eye:
+                    r_min_x = land_face[coordis][0] if r_min_x > land_face[coordis][0] else r_min_x
+                    r_min_y = land_face[coordis][1] if r_min_y > land_face[coordis][1] else r_min_y
+                    r_max_x = land_face[coordis][0] if r_max_x < land_face[coordis][0] else r_max_x
+                    r_max_y = land_face[coordis][1] if r_max_y < land_face[coordis][1] else r_max_y
+                l_min_x, l_min_y, l_max_x, l_max_y = 640, 480, 0, 0
+                for coordis in left_eye:
+                    l_min_x = land_face[coordis][0] if l_min_x > land_face[coordis][0] else l_min_x
+                    l_min_y = land_face[coordis][1] if l_min_y > land_face[coordis][1] else l_min_y
+                    l_max_x = land_face[coordis][0] if l_max_x < land_face[coordis][0] else l_max_x
+                    l_max_y = land_face[coordis][1] if l_max_y < land_face[coordis][1] else l_max_y
+
                 mask = np.zeros(face.shape[:2], dtype=np.uint8)
                 mask = eye_on_mask(land_face, mask, left_eye)
                 mask = eye_on_mask(land_face, mask, right_eye)
                 kernel = np.ones((9, 9), np.uint8)
                 mask = cv2.dilate(mask, kernel, 5)
-                eyes = cv2.bitwise_and(face, face, mask=mask)
+
+                face_gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+                face_gray[r_min_y:r_max_y, r_min_x:r_max_x] = cv2.equalizeHist(face_gray[r_min_y:r_max_y, r_min_x:r_max_x])
+                face_gray[l_min_y:l_max_y, l_min_x:l_max_x] = cv2.equalizeHist(face_gray[l_min_y:l_max_y, l_min_x:l_max_x])
+                face_gray = cv2.cvtColor(face_gray, cv2.COLOR_GRAY2BGR)
+                eyes = cv2.bitwise_and(face_gray, face_gray, mask=mask)
                 mask = (eyes == [0, 0, 0]).all(axis=2)
                 eyes[mask] = [255, 255, 255]
                 eyes_gray = cv2.cvtColor(eyes, cv2.COLOR_BGR2GRAY)
-
                 threshold = cv2.getTrackbarPos('threshold', 'annotated')
                 _, thresh = cv2.threshold(eyes_gray, threshold, 255, cv2.THRESH_BINARY)
                 thresh = cv2.erode(thresh, None, iterations=2)
@@ -181,9 +191,11 @@ def main():
                 mid = (land_face[42][0] + land_face[39][0]) // 2
                 l_center = contouring(thresh[:, 0:mid], mid, face)
                 r_center = contouring(thresh[:, mid:], mid, face, True)
+                thresh = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
 
-                cv2.imshow('image', thresh)
-                blackboard[:300, :] = face
+                blackboard[300:, :300] = thresh
+                blackboard[:300, :300] = face
+                # blackboard[:300, ]
             ''''''
 
             '''whiteboard'''
@@ -195,7 +207,7 @@ def main():
             if i >= int(points[n_point] ** 0.5):
                 i = 0
                 j += 1
-            x, y = calib_board(n_point, i, j)
+            # x, y = calib_board(n_point, i, j)
             if click_pt:
                 if abs(click_pt[0] - x) < 2 and abs(click_pt[1] - y) < 2:
                     cal_pt = f'cal_{points[n_point]}_{j}_{i}'
@@ -215,20 +227,31 @@ def main():
                 else:
                     click_pt.clear()
             ''''''
+            notice_board = np.full((600-frame_height, frame_width, 3), 0, dtype=np.uint8)
+            cv2.putText(notice_board, f'face detection : {sec1 * 100:.2}ms', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                        (255, 255, 255), 2)
+            cv2.putText(notice_board, f'landmark detection : {sec2 * 100:.2}ms', (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                        (255, 255, 255), 2)
+            blackboard[frame_height:, 300:] = notice_board
+            blackboard[:frame_height, 300:] = frame
+            cv2.imshow('annotated', blackboard)
 
-            cv2.putText(frame, f'face detection : {sec1 * 100:.2}ms', (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        (0, 0, 255), 2)
-            cv2.putText(frame, f'landmark detection : {sec2 * 100:.2}ms', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                        (0, 0, 255), 2)
-            concat_img = cv2.hconcat([blackboard, frame])
-            cv2.imshow('annotated', concat_img)
+            if save:
+                out.write(blackboard)
 
-            if cv2.waitKey(1) == 27:
+            key = cv2.waitKey(1)
+            if key == 27:
                 break
+            # 155 == 's'
+            if key == 115:
+                save = True
+
         else:
             break
 
     cv2.destroyAllWindows()
+    cap.release()
+    out.release()
 
 
 if __name__ == '__main__':

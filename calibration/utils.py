@@ -3,13 +3,6 @@ import time
 import numpy as np
 from PIL import Image
 
-import sys
-
-sys.path.append('C:/Users/th_k9/Desktop/Eyetracking/pytorch_facelandmark_detection')
-from face_detection_model.mobilenetv1 import MobileNetV1
-from face_detection_model.ssd import SSD, Predictor
-
-import torch
 import torch.nn as nn
 from torchvision import models
 import torchvision.transforms.functional as TF
@@ -18,6 +11,8 @@ left_eye = [36, 37, 38, 39, 40, 41]
 right_eye = [42, 43, 44, 45, 46, 47]
 eye_top = [37, 38,  43, 44]
 eye_bottom = [40, 41, 46, 47]
+eye_side_left = [36, 42]
+eye_side_right = [39, 45]
 
 
 points = [9, 16, 25]
@@ -110,6 +105,10 @@ def shape_to_np(shape, land_add=0, dtype="int"):
             coords[i] = (shape.part(i).x, shape.part(i).y - land_add)
         elif i in eye_bottom:
             coords[i] = (shape.part(i).x, shape.part(i).y + land_add)
+        elif i in eye_side_left:
+            coords[i] = (shape.part(i).x - land_add, shape.part(i).y)
+        elif i in eye_side_right:
+            coords[i] = (shape.part(i).x + land_add, shape.part(i).y)
         else:
             coords[i] = (shape.part(i).x, shape.part(i).y)
     # return the list of (x, y)-coordinates
