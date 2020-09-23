@@ -15,12 +15,13 @@ face_size = 300
 bbox_region = {'forehead': 35, 'chin': 0, 'add_face_width': 10}
 filters = {'bbox': 15, 'landmark': 3}
 
-left_eye = [36, 37, 38, 39, 40, 41]
-right_eye = [42, 43, 44, 45, 46, 47]
-eye_top = [37, 38,  43, 44]
-eye_bottom = [40, 41, 46, 47]
-eye_side_left = [36, 42]
-eye_side_right = [39, 45]
+idx_nose = [27, 28, 29, 30, 31, 32, 33, 34, 35]
+idx_left_eye = [36, 37, 38, 39, 40, 41]
+idx_right_eye = [42, 43, 44, 45, 46, 47]
+idx_eye_top = [37, 38, 43, 44]
+idx_eye_bottom = [40, 41, 46, 47]
+idx_eye_side_left = [36, 42]
+idx_eye_side_right = [39, 45]
 
 points = [9, 16, 25]
 init_x, init_y = 10, 10
@@ -125,13 +126,13 @@ def cvt_shape_to_np(landmakrs, land_add=0, dtype="int"):
     for i in range(0, 68):
         x = landmakrs.part(i).x
         y = landmakrs.part(i).y
-        if i in eye_top:
+        if i in idx_eye_top:
             coords[i] = (x, y - land_add)
-        elif i in eye_bottom:
+        elif i in idx_eye_bottom:
             coords[i] = (x, y + land_add)
-        elif i in eye_side_left:
+        elif i in idx_eye_side_left:
             coords[i] = (x - (land_add-2), y)
-        elif i in eye_side_right:
+        elif i in idx_eye_side_right:
             coords[i] = (x + (land_add+2), y)
         else:
             coords[i] = (x, y)
@@ -209,9 +210,9 @@ def get_eye_box_coord(rel_land, mode=None):
 
     min_x, min_y, max_x, max_y = face_size, face_size, 0, 0
     if mode == 'right':
-        eye_idx = right_eye
+        eye_idx = idx_right_eye
     elif mode == 'left':
-        eye_idx = left_eye
+        eye_idx = idx_left_eye
     else:
         print(f'Error : get_eye_box_coord function')
         eye_idx = []
@@ -231,8 +232,8 @@ def get_eye_centers(face, rel_land):
     l_min_x, l_min_y, l_max_x, l_max_y = get_eye_box_coord(rel_land, mode='left')
 
     mask = np.zeros(face.shape[:2], dtype=np.uint8)
-    mask = eye_on_mask(abs_land, mask, left_eye)
-    mask = eye_on_mask(abs_land, mask, right_eye)
+    mask = eye_on_mask(abs_land, mask, idx_left_eye)
+    mask = eye_on_mask(abs_land, mask, idx_right_eye)
     kernel = np.ones((9, 9), np.uint8)
     mask = cv2.dilate(mask, kernel, 5)
 
@@ -256,3 +257,21 @@ def get_eye_centers(face, rel_land):
     r_center = contouring(thresh[:, mid:], mid, face, True)
 
     return (l_center, r_center), cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+
+
+def list_to_str(in_list):
+    ret = ""
+    for i in in_list:
+        ret += str(i)
+        ret += ' '
+
+    return ret[:-1]
+
+
+def np_to_str(in_np):
+    ret = ""
+    for i in in_np:
+        ret += f"{str(i[0])} "
+        ret += f"{str(i[1])} "
+
+    return ret[:-1]
