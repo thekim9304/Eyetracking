@@ -1,5 +1,6 @@
 import cv2
 import time
+# conda install -c conda-forge dlib
 import dlib
 import numpy as np
 
@@ -8,6 +9,7 @@ sys.path.append('C:/Users/th_k9/Desktop/Eyetracking/pytorch_facelandmark_detecti
 from face_detection_model.mobilenetv1 import MobileNetV1
 from face_detection_model.ssd import SSD, Predictor
 
+# conda install pytorch torchvision cudatoolkit=10.1 -c pytorch
 import torch
 
 # setting
